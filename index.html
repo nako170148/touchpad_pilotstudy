@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>5本指上げ実験</title>
+    <style>
+        * {
+            margin: 0; padding: 0; box-sizing: border-box;
+            -webkit-user-select: none; user-select: none;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f0f4f8;
+            padding: 12px;
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
+            overflow: hidden;
+        }
+        .container {
+            height: calc(100vh - 24px);
+            height: calc(100dvh - 24px);
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        header { text-align: center; flex-shrink: 0; }
+        h1 { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
+        .subtitle { font-size: 0.82rem; color: #666; margin-top: 2px; }
+
+        /* ── タッチエリア ── */
+        .touch-area {
+            flex: 1; min-height: 0;
+            background: white; border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+            border: 2px solid #e0e0e0;
+            position: relative; overflow: hidden; touch-action: none;
+        }
+
+        /* ── 指示ボックス ── */
+        .instruction {
+            position: absolute; top: 16px; left: 16px; right: 16px;
+            padding: 14px 16px;
+            background: rgba(240,244,248,0.96);
+            border-radius: 10px; border: 2px solid #ccc;
+            text-align: center; z-index: 10;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .instruction .main { font-size: 1.25rem; font-weight: 700; color: #1a1a2e; }
+        .instruction .sub  { font-size: 0.82rem; color: #555; margin-top: 4px; min-height: 1.2em; }
+        .instruction.detected { background: rgba(232,245,233,0.96); border-color: #66bb6a; }
+        .instruction.prompt   { background: rgba(255,243,224,0.96); border-color: #ffa726; }
+        .instruction.correct  { background: rgba(232,245,233,0.96); border-color: #4caf50; }
+        .instruction.wrong    { background: rgba(255,235,238,0.96); border-color: #ef5350; }
+
+        /* ── フィードバック文字 ── */
+        .feedback {
+            position: absolute; top: 16px;
+            font-size: 5rem; font-weight: 900;
+            z-index: 20; display: none; pointer-events: none;
+            line-height: 1; opacity: 0.9;
+        }
+        .feedback.hand-right { left: 20px; }
+        .feedback.hand-left  { right: 20px; }
+        .feedback.correct { color: #4caf50; }
+        .feedback.wrong   { color: #ef5350; }
+
+        /* ── カウントダウン ── */
+        #countdown {
+            position: absolute; top: 12%; left: 50%;
+            transform: translateX(-50%);
+            font-size: 10rem; font-weight: 900;
+            z-index: 18; display: none; pointer-events: none;
+            line-height: 1; opacity: 0.85;
+        }
+
+        /* ── 手のイラスト ── */
+        #handHint {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(255,255,255,0.82);
+            border-radius: 8px; padding: 4px;
+            z-index: 15; display: none;
+        }
+
+        /* ── タッチポイント ── */
+        .touch-point {
+            position: absolute; width: 64px; height: 64px;
+            border-radius: 50%; background: #90a4ae;
+            border: 3px solid white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transform: translate(-50%, -50%);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: bold; font-size: 1rem;
+            pointer-events: none;
+        }
+        .touch-point.identified { background: #42a5f5; }
+        .touch-point.target {
+            background: #ff9800;
+            animation: pulse-ring 1s ease-out infinite;
+        }
+        @keyframes pulse-ring {
+            0%   { box-shadow: 0 0 0 0   rgba(255,152,0,0.55), 0 2px 8px rgba(0,0,0,0.2); }
+            70%  { box-shadow: 0 0 0 14px rgba(255,152,0,0),   0 2px 8px rgba(0,0,0,0.2); }
+            100% { box-shadow: 0 0 0 0   rgba(255,152,0,0),   0 2px 8px rgba(0,0,0,0.2); }
+        }
+
+        /* ── 下パネル ── */
+        .bottom-panel {
+            background: white; border-radius: 12px;
+            padding: 12px; flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid #e0e0e0;
+        }
+        .hand-selection { display: flex; gap: 10px; }
+        .status-row {
+            display: flex; justify-content: space-around;
+            margin-bottom: 8px;
+        }
+        .status-item { text-align: center; }
+        .status-label { font-size: 0.7rem; color: #888; }
+        .status-value { font-size: 1rem; font-weight: 700; color: #333; }
+
+        .progress-bar-wrap {
+            background: #e0e0e0; border-radius: 6px;
+            height: 8px; overflow: hidden; margin: 4px 0;
+        }
+        .progress-bar {
+            height: 100%; background: #42a5f5;
+            border-radius: 6px; width: 0%;
+            transition: width 0.3s;
+        }
+        .progress-text { font-size: 0.78rem; color: #888; text-align: center; margin-bottom: 6px; }
+
+        /* ── 結果テーブル ── */
+        .results-section { margin-top: 8px; }
+        .results-section h2 { font-size: 0.9rem; font-weight: 700; color: #333; margin-bottom: 4px; }
+        .results-table {
+            width: 100%; border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+        .results-table th {
+            background: #f5f5f5; padding: 5px 6px;
+            text-align: left; font-weight: 600; color: #555;
+            border-bottom: 2px solid #ddd;
+        }
+        .results-table td { padding: 5px 6px; border-bottom: 1px solid #eee; }
+        .results-table .worst { color: #ef5350; font-weight: 700; }
+        .results-table .best  { color: #4caf50; font-weight: 700; }
+        .results-detail-label {
+            font-size: 0.75rem; color: #888; margin: 6px 0 2px;
+        }
+        .results-detail-wrap {
+            max-height: 150px; overflow-y: auto;
+            border: 1px solid #eee; border-radius: 4px;
+        }
+        .results-note {
+            font-size: 0.75rem; color: #888; margin-top: 4px; text-align: center;
+        }
+
+        /* ── 本数選択 ── */
+        .count-select-label {
+            font-size: 0.85rem; color: #555; margin-bottom: 6px; text-align: center;
+        }
+        .count-buttons {
+            display: flex; gap: 6px; flex-wrap: wrap;
+        }
+        .count-buttons .btn {
+            flex: 1; min-width: 56px;
+            display: flex; flex-direction: column; align-items: center;
+            padding: 10px 4px;
+        }
+        .count-sub {
+            font-size: 0.68rem; color: #999; font-weight: 400; margin-top: 2px;
+        }
+        .btn.primary .count-sub { color: rgba(255,255,255,0.75); }
+
+        /* ── ボタン ── */
+        .btn {
+            flex: 1; padding: 12px;
+            border: 1px solid #ddd; border-radius: 8px;
+            font-size: 0.95rem; font-weight: 600;
+            cursor: pointer; background: white; color: #333;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .btn:active { background: #f0f0f0; transform: translateY(1px); }
+        .btn.primary { background: #42a5f5; color: white; border-color: #1e88e5; }
+        .btn.primary:active { background: #1e88e5; }
+        .controls { display: flex; gap: 8px; margin-top: 8px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="touch-area" id="touchArea">
+        <div class="instruction" id="instruction">
+            <div class="main">使用する手を選択してください</div>
+            <div class="sub"></div>
+        </div>
+        <div class="feedback" id="feedback"></div>
+        <div id="countdown"></div>
+        <!-- 手のイラスト -->
+        <div id="handHint">
+            <svg id="handSvg" viewBox="0 0 65 90" width="200" height="300" xmlns="http://www.w3.org/2000/svg">
+                <g id="handGroup">
+                    <rect id="hand-f0" x="3"  y="22" width="11" height="38" rx="5.5" fill="#90a4ae" stroke="white" stroke-width="1.5"/>
+                    <rect id="hand-f1" x="15" y="10" width="11" height="50" rx="5.5" fill="#90a4ae" stroke="white" stroke-width="1.5"/>
+                    <rect id="hand-f2" x="27" y="5"  width="11" height="55" rx="5.5" fill="#90a4ae" stroke="white" stroke-width="1.5"/>
+                    <rect id="hand-f3" x="39" y="10" width="11" height="50" rx="5.5" fill="#90a4ae" stroke="white" stroke-width="1.5"/>
+                    <rect id="hand-f4" x="51" y="18" width="10" height="40" rx="5"   fill="#90a4ae" stroke="white" stroke-width="1.5"/>
+                    <rect x="3" y="52" width="58" height="34" rx="8" fill="#90a4ae" stroke="white" stroke-width="1.5"/>
+                </g>
+            </svg>
+        </div>
+    </div>
+
+    <div class="bottom-panel">
+        <!-- 手の選択 -->
+        <div id="handSelection" class="hand-selection">
+            <button class="btn primary" id="leftHandBtn">左手</button>
+            <button class="btn primary" id="rightHandBtn">右手</button>
+        </div>
+
+        <!-- 実験中パネル -->
+        <div id="mainPanel" style="display:none">
+
+            <!-- ステップ1: 本数選択 -->
+            <div id="fingerCountSelection">
+                <p class="count-select-label">何本指の実験をしますか？</p>
+                <div class="count-buttons">
+                    <button class="btn" id="count1Btn">1本指</button>
+                    <button class="btn" id="count2Btn">2本指</button>
+                    <button class="btn" id="count3Btn">3本指</button>
+                    <button class="btn" id="count4Btn">4本指</button>
+                    <button class="btn primary" id="countAllBtn">全て</button>
+                </div>
+            </div>
+
+            <!-- ステップ2: 実験 -->
+            <div id="experimentPanel" style="display:none">
+            <div class="status-row">
+                <div class="status-item">
+                    <div class="status-label">タッチ数</div>
+                    <div class="status-value" id="touchCount">0</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">使用する手</div>
+                    <div class="status-value" id="handType">-</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">進捗</div>
+                    <div class="status-value" id="trialCount">0/60</div>
+                </div>
+            </div>
+            <div class="progress-bar-wrap">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="progress-text" id="progressText">0 / 60 試行</div>
+
+            <!-- 結果 -->
+            <div class="results-section" id="resultsSection" style="display:none">
+                <h2>実験結果</h2>
+                <!-- 本数別グループサマリー -->
+                <table class="results-table">
+                    <thead>
+                        <tr><th>本数</th><th>正解率</th><th>平均反応時間</th></tr>
+                    </thead>
+                    <tbody id="groupSummaryBody"></tbody>
+                </table>
+                <!-- 組み合わせ別詳細 -->
+                <p class="results-detail-label">組み合わせ別詳細</p>
+                <div class="results-detail-wrap">
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th>指の組み合わせ</th>
+                                <th>正解率</th>
+                                <th>反応時間</th>
+                                <th>誤上げ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody"></tbody>
+                    </table>
+                </div>
+                <p class="results-note" id="resultsNote"></p>
+            </div>
+
+            <div class="controls">
+                <button class="btn" id="exportBtn" style="display:none">JSON保存</button>
+                <button class="btn" id="resetBtn">リセット</button>
+            </div>
+            </div><!-- /#experimentPanel -->
+        </div><!-- /#mainPanel -->
+    </div><!-- /.bottom-panel -->
+</div>
+
+<script type="module" src="experiment_app.js"></script>
+</body>
+</html>
